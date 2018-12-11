@@ -93,25 +93,158 @@ for gradient in gradients:
             gradientColorList += [ hexvalues ]
         gradientColorLists += [ [ id, gradientColorList] ]
         
-print(gradientColorLists)
-print(gradientInstances)
+#print(gradientColorLists)
+#print(gradientInstances)
 
 groups = root.getElementsByTagName('g')
-for group in groups:
-    # Get paths
-    paths = group.getElementsByTagName('path')
-    print(len(paths))
-    for path in paths:
-        print("path",path)
-    
-    # Get circles
-    circles = group.getElementsByTagName('circle')
-    print(len(circles))
-    for circle in circles:
-        print("circle", circle)
+
+# Specify format
+endian = '<' # little endian
+datatype = 'H' # unsigned short
+fmt = endian + datatype
+
+# Pack texture
+# Number of groups is not packed. This should be 1. If not, fix your svg.
+group = groups[0]
+
+# Pack number of paths 
+paths = group.getElementsByTagName('path')
+texture = struct.pack(fmt, len(paths))
+print("Packing ", len(paths), "paths.")
+
+# Identify global transform
+# This is assumed to be only a translation. If it is not, fix your
+# SVG.
+transform = group.getAttribute("transform")
+transform = transform.lstrip("translate(").rstrip(")").split(',')
+transform = [ float(l) for l in transform ]
+
+# Pack actual paths
+fillcolors = []
+for path in paths:
+    # Set sensible defaults in case keys are not present
+    fillcolor = [0.,0.,0.]
+    fillopacity = 1.
+    strokecolor = [0.,0.,0.]
+    strokeopacity = 1.
+    strokewidth = 0.
+
+    # Get style
+    style = path.getAttribute('style')
+    entries = style.strip().split(';')
+    for entry in entries:
+        pair = entry.split(':')
+        key = pair[0]
+        value = pair[1]
         
-    # Get Ellipses
-    ellipses = group.getElementsByTagName('ellipse')
-    for ellipse in ellipses:
-        print("ellipse", ellipse)
+        # Update information
+        if key == 'fill':
+            fillcolor = [ float(int(value[1:3], 16))/255., float(int(value[3:5], 16))/255., float(int(value[5:], 16))/255. ]
+        elif key == 'fill-opacity':
+            fillopacity = float(value)
+        elif key == 'stroke':
+            strokecolor = [ float(int(value[1:3], 16))/255., float(int(value[3:5], 16))/255., float(int(value[5:], 16))/255. ]
+        elif key == 'stroke-width':
+            strokewidth = float(value.replace('px',''))
+        elif key == 'stroke-opacity':
+            strokeopacity = float(value)
     
+    # Get spline control data
+    control = path.getAttribute('d')
+    data = control.split()
+    lin = []
+    cub = []
+    pos = transform
+    print(data)
+    for i in range(len(data)):
+        datum = data[i]
+        print(data[i])
+        if datum == 'm':
+            i += 1
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+            continue
+        if datum == 'c':
+            i += 1
+            print('>',data[i])
+            # First point
+            cub += [ pos ]
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+            i += 1
+            print('>>',data[i])
+            # Second point
+            cub += [ pos ]
+            
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+            i += 1
+            print('>>>',data[i])
+            # Third point
+            cub += [ pos ]
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+            i += 1
+            
+            # Last point
+            cub += [ pos ]
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+
+            continue
+        
+        if datum == 'l':
+            i += 1
+            
+            # First point
+            lin += [ pos ]
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+            i += 1
+            
+            # Second point
+            lin += [ pos ]
+            delta = [ float(l) for l in data[i].split(',') ]
+            for j in range(2):
+                pos[j] = pos[j] + delta[j]
+
+            continue
+            
+    # Add linear control data
+    text = "vec2 lin["+str(len(lin))+"]=vec2["+str(len(lin))+"]("
+    for l in lin:
+        text += "vec2("+str(l[0])+","+str(l[1])+"),"
+    if len(text) > 0:
+        text = text[:-1]+");"
+    print(text)
+    
+    # Add cubic control data
+    text = "vec2 cub["+str(len(cub))+"]=vec2["+str(len(cub))+"]("
+    for l in cub:
+        text += "vec2("+str(l[0])+","+str(l[1])+"),"
+    if len(text) > 0:
+        text = text[:-1]+");"
+    print(text)
+    
+    print("==============")
+    
+    
+    
+
+# Get circles
+circles = group.getElementsByTagName('circle')
+print(len(circles))
+for circle in circles:
+    print("circle", circle)
+    
+# Get Ellipses
+ellipses = group.getElementsByTagName('ellipse')
+for ellipse in ellipses:
+    print("ellipse", ellipse)
+
